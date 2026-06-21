@@ -630,16 +630,16 @@ function FiscalSeccion({ onBack }: { onBack: () => void }) {
             <div>
               <Label req>Régimen fiscal</Label>
               <select value={form.regimen_fiscal} onChange={e => set('regimen_fiscal', e.target.value)} className={inputCls(errors.regimen_fiscal)}>
-                <option value="">Seleccionar...</option>
-                {REGIMENES_FISCALES.map(r => <option key={r} value={r}>{r}</option>)}
+                <option value="">Seleccionar régimen...</option>
+                {REGIMENES_FISCALES.map(r => <option key={r.clave} value={r.clave}>{r.desc}</option>)}
               </select>
               <ErrMsg msg={errors.regimen_fiscal} />
             </div>
             <div>
               <Label req>Destino del CFDI</Label>
               <select value={form.cfdi} onChange={e => set('cfdi', e.target.value)} className={inputCls(errors.cfdi)}>
-                <option value="">Seleccionar...</option>
-                {USOS_CFDI.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="">Seleccionar uso de CFDI...</option>
+                {USOS_CFDI.map(c => <option key={c.clave} value={c.clave}>{c.desc}</option>)}
               </select>
               <ErrMsg msg={errors.cfdi} />
             </div>

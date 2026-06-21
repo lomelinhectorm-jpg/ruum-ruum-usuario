@@ -318,16 +318,16 @@ function StepRegister({ onBack, onNext }: {
             <div>
               <Label req>Régimen fiscal</Label>
               <select value={form.regimenFiscal} onChange={e => set('regimenFiscal', e.target.value)} className={iCls(errors.regimenFiscal)}>
-                <option value="">Seleccionar...</option>
-                {REGIMENES_FISCALES.map(r => <option key={r} value={r}>{r}</option>)}
+                <option value="">Seleccionar régimen...</option>
+                {REGIMENES_FISCALES.map(r => <option key={r.clave} value={r.clave}>{r.desc}</option>)}
               </select>
               <Err msg={errors.regimenFiscal} />
             </div>
             <div>
               <Label req>Uso de CFDI</Label>
               <select value={form.cfdi} onChange={e => set('cfdi', e.target.value)} className={iCls(errors.cfdi)}>
-                <option value="">Seleccionar...</option>
-                {USOS_CFDI.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="">Seleccionar uso de CFDI...</option>
+                {USOS_CFDI.map(c => <option key={c.clave} value={c.clave}>{c.desc}</option>)}
               </select>
               <Err msg={errors.cfdi} />
             </div>
@@ -357,7 +357,7 @@ function StepRegister({ onBack, onNext }: {
                   <Err msg={errors.fiscalCp} />
                 </div>
                 <div>
-                  <Label>Municipio</Label>
+                  <Label>Municipio / Alcaldía</Label>
                   <input type="text" value={form.fiscalMunicipio} placeholder="MUNICIPIO"
                     onChange={e => set('fiscalMunicipio', e.target.value.toUpperCase())} className={iCls()} />
                 </div>
