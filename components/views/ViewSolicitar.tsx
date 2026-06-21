@@ -6,6 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faSpinner, faCheckCircle } from '@fortawesome/free-solid-svg-icons'
 import type { StepId } from '@/lib/types'
 import { RRButton, RRCard } from '@/components/rr'
+import { TRANSMISIONES } from '@/lib/constants/vehiculo'
 
 function StepIndicator({ step, currentStep }: { step: number; currentStep: number }) {
   const active = step <= currentStep
@@ -34,11 +35,11 @@ export default function ViewSolicitar() {
   // Datos del formulario
   const [form, setForm] = useState({
     // Vehículo
-    marca: '', modelo: '', anio: '', color: '', placas: '', transmision: '',
+    marca: '', modelo: '', anio: '', color: '', placas: '', vin: '', transmision: '', alias: '',
     // Ruta
-    origen_calle: '', origen_numero: '', origen_colonia: '', origen_estado: '', origen_cp: '',
+    origen_calle: '', origen_numero: '', origen_colonia: '', origen_municipio: '', origen_estado: '', origen_cp: '',
     origen_contacto: '', origen_telefono: '',
-    destino_calle: '', destino_numero: '', destino_colonia: '', destino_estado: '', destino_cp: '',
+    destino_calle: '', destino_numero: '', destino_colonia: '', destino_municipio: '', destino_estado: '', destino_cp: '',
     destino_contacto: '', destino_telefono: '',
     referencias: '', instrucciones: '',
     fecha_programada: '', hora_programada: '',
@@ -134,15 +135,27 @@ export default function ViewSolicitar() {
                 onChange={e => set('placas', e.target.value.toUpperCase())}
                 placeholder="XYZ-987" className={inputCls} />
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>VIN</label>
+                <input type="text" value={form.vin}
+                  onChange={e => set('vin', e.target.value.toUpperCase())}
+                  placeholder="17 CARACTERES" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Transmisión</label>
+                <select value={form.transmision} onChange={e => set('transmision', e.target.value)}
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Seleccionar...</option>
+                  {TRANSMISIONES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
             <div>
-              <label className={labelCls}>Transmisión</label>
-              <select value={form.transmision} onChange={e => set('transmision', e.target.value)}
-                className={`${inputCls} bg-white`}>
-                <option value="">Seleccionar...</option>
-                <option>Automática</option>
-                <option>Manual</option>
-                <option>CVT</option>
-              </select>
+              <label className={labelCls}>Alias / Apodo</label>
+              <input type="text" value={form.alias}
+                onChange={e => set('alias', e.target.value.toUpperCase())}
+                placeholder="EJ. CAMIONETA GRIS 1" className={inputCls} />
             </div>
           </div>
           <RRButton
@@ -191,14 +204,28 @@ export default function ViewSolicitar() {
                   placeholder="06600" maxLength={5} className={inputCls} />
               </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Municipio / Alcaldía</label>
+                <input type="text" value={form.origen_municipio}
+                  onChange={e => set('origen_municipio', e.target.value.toUpperCase())}
+                  placeholder="CUAUHTÉMOC" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Estado</label>
+                <input type="text" value={form.origen_estado}
+                  onChange={e => set('origen_estado', e.target.value.toUpperCase())}
+                  placeholder="CIUDAD DE MÉXICO" className={inputCls} />
+              </div>
+            </div>
             <div>
-              <label className={labelCls}>Contacto en origen</label>
+              <label className={labelCls}>Nombre del responsable de entrega</label>
               <input type="text" value={form.origen_contacto}
                 onChange={e => set('origen_contacto', e.target.value.toUpperCase())}
                 placeholder="NOMBRE DEL CONTACTO" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Teléfono origen</label>
+              <label className={labelCls}>Teléfono del responsable de entrega</label>
               <input type="tel" value={form.origen_telefono} maxLength={12}
                 onChange={e => {
                   const d = e.target.value.replace(/\D/g,'').slice(0,10)
@@ -238,14 +265,28 @@ export default function ViewSolicitar() {
                   placeholder="53100" maxLength={5} className={inputCls} />
               </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Municipio / Alcaldía</label>
+                <input type="text" value={form.destino_municipio}
+                  onChange={e => set('destino_municipio', e.target.value.toUpperCase())}
+                  placeholder="NAUCALPAN" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Estado</label>
+                <input type="text" value={form.destino_estado}
+                  onChange={e => set('destino_estado', e.target.value.toUpperCase())}
+                  placeholder="ESTADO DE MÉXICO" className={inputCls} />
+              </div>
+            </div>
             <div>
-              <label className={labelCls}>Contacto en destino</label>
+              <label className={labelCls}>Nombre del responsable de recepción</label>
               <input type="text" value={form.destino_contacto}
                 onChange={e => set('destino_contacto', e.target.value.toUpperCase())}
                 placeholder="NOMBRE DEL CONTACTO" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Teléfono destino</label>
+              <label className={labelCls}>Teléfono del responsable de recepción</label>
               <input type="tel" value={form.destino_telefono} maxLength={12}
                 onChange={e => {
                   const d = e.target.value.replace(/\D/g,'').slice(0,10)
@@ -264,6 +305,13 @@ export default function ViewSolicitar() {
             <label className={labelCls}>Hora</label>
             <input type="time" value={form.hora_programada}
               onChange={e => set('hora_programada', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Referencias del lugar</label>
+            <input type="text" value={form.referencias}
+              onChange={e => set('referencias', e.target.value.toUpperCase())}
+              placeholder="ENTRE CALLES, PUNTO DE REFERENCIA, COLOR DE FACHADA..."
+              className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Instrucciones especiales</label>
@@ -296,6 +344,7 @@ export default function ViewSolicitar() {
           <RRCard className="p-4 space-y-3">
             <p className="text-xs font-bold text-rr-gray500 uppercase">🚗 Vehículo</p>
             <p className="font-semibold">{form.marca} {form.modelo} · {form.placas}</p>
+            {form.alias && <p className="text-sm text-rr-gray500">&quot;{form.alias}&quot;</p>}
             {form.color && <p className="text-sm text-rr-gray500">{form.color} · {form.transmision || 'Sin especificar'}</p>}
           </RRCard>
 
@@ -309,7 +358,13 @@ export default function ViewSolicitar() {
               </div>
               <div>
                 <p className="text-sm font-semibold">{form.origen_calle}{form.origen_numero ? ` ${form.origen_numero}` : ''}, {form.origen_colonia}</p>
+                {(form.origen_municipio || form.origen_estado) && (
+                  <p className="text-xs text-rr-gray500">{[form.origen_municipio, form.origen_estado].filter(Boolean).join(', ')}</p>
+                )}
                 <p className="text-sm font-semibold mt-3">{form.destino_calle}{form.destino_numero ? ` ${form.destino_numero}` : ''}, {form.destino_colonia}</p>
+                {(form.destino_municipio || form.destino_estado) && (
+                  <p className="text-xs text-rr-gray500">{[form.destino_municipio, form.destino_estado].filter(Boolean).join(', ')}</p>
+                )}
               </div>
             </div>
             {form.fecha_programada && (

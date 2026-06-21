@@ -102,15 +102,18 @@ export default function ViewEvidencia() {
   const [evidencia, setEvidencia] = useState<EvidenciaData | null>(null)
   const [urlsInicial, setUrlsInicial] = useState<Record<string, string>>({})
   const [urlsFinal, setUrlsFinal] = useState<Record<string, string>>({})
-  const [cargando, setCargando] = useState(true)
+  const [viajeCargadoId, setViajeCargadoId] = useState<string | null>(null)
   const viaje = viajeSeleccionado
+  const viajeId = viaje?.id ?? null
+  const cargando = viajeId !== null && viajeCargadoId !== viajeId
 
   useEffect(() => {
-    if (!viaje) { setCargando(false); return }
+    if (!viajeId) return
+    let activo = true
     const cargar = async () => {
-      setCargando(true)
       try {
-        const data = await getEvidenciaViaje(viaje.id) as EvidenciaData | null
+        const data = await getEvidenciaViaje(viajeId) as EvidenciaData | null
+        if (!activo) return
         setEvidencia(data)
         if (data) {
           const pares: { columna: string; path: string; tipo: 'inicial' | 'final' }[] = []
@@ -129,16 +132,23 @@ export default function ViewEvidencia() {
             if (p.tipo === 'inicial') nuevasInicial[p.columna] = url
             else nuevasFinal[p.columna] = url
           })
+          if (!activo) return
           setUrlsInicial(nuevasInicial)
           setUrlsFinal(nuevasFinal)
+        } else {
+          setUrlsInicial({})
+          setUrlsFinal({})
         }
       } catch (e) {
         console.error('Error cargando evidencia:', e)
+        if (activo) setEvidencia(null)
+      } finally {
+        if (activo) setViajeCargadoId(viajeId)
       }
-      setCargando(false)
     }
-    cargar()
-  }, [viaje?.id])
+    void cargar()
+    return () => { activo = false }
+  }, [viajeId])
 
   if (!viaje) {
     return (

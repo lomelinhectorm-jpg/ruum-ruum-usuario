@@ -15,9 +15,9 @@ export default function TopHeader() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="relative h-10 w-10 rounded-full bg-white/10 text-white/80 hover:bg-white/15 hover:text-white">
+          <button className="relative h-10 w-10 rounded-full bg-white/10 text-white/50 cursor-not-allowed" disabled
+            title="Notificaciones — próximamente">
             <FontAwesomeIcon icon={faBell} className="text-base" />
-            <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rr-warning rounded-full border border-rr-secondary" />
           </button>
         </div>
       </div>

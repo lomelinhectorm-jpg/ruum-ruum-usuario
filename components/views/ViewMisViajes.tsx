@@ -5,11 +5,12 @@ import { useApp } from '@/context/AppContext'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronRight, faCheckCircle, faSpinner, faPlus } from '@fortawesome/free-solid-svg-icons'
 
-type Tab = 'Activos' | 'Programados' | 'Finalizados'
+type Tab = 'Activos' | 'Programados' | 'Finalizados' | 'Cancelados'
 
 const ACTIVOS = ['Solicitud recibida','Pendiente de asignación','Conductor asignado','Conductor en camino','Recolección en proceso','Evidencia inicial pendiente','Traslado en curso','Entrega en proceso','Evidencia final pendiente','En revisión por incidencia']
 const PROGRAMADOS = ['Conductor asignado']
-const FINALIZADOS = ['Finalizado','Cancelado']
+const FINALIZADOS = ['Finalizado']
+const CANCELADOS = ['Cancelado']
 
 const statusColor: Record<string, string> = {
   'Solicitud recibida':         'bg-slate-100 text-slate-600',
@@ -25,13 +26,15 @@ const statusColor: Record<string, string> = {
 export default function ViewMisViajes() {
   const { showView, misViajes, cargandoViajes, setViajeSeleccionado } = useApp()
   const [activeTab, setActiveTab] = useState<Tab>('Activos')
-  const tabs: Tab[] = ['Activos', 'Programados', 'Finalizados']
+  const tabs: Tab[] = ['Activos', 'Programados', 'Finalizados', 'Cancelados']
 
-  const filtrados = misViajes.filter(v => {
-    if (activeTab === 'Activos') return ACTIVOS.includes(v.status)
-    if (activeTab === 'Programados') return PROGRAMADOS.includes(v.status)
-    return FINALIZADOS.includes(v.status)
-  })
+  const statusesDeTab = (tab: Tab) =>
+    tab === 'Activos' ? ACTIVOS :
+    tab === 'Programados' ? PROGRAMADOS :
+    tab === 'Finalizados' ? FINALIZADOS :
+    CANCELADOS
+
+  const filtrados = misViajes.filter(v => statusesDeTab(activeTab).includes(v.status))
 
   return (
     <div className="fade-in p-5 pb-24">
@@ -50,17 +53,9 @@ export default function ViewMisViajes() {
             }`}
           >
             {tab}
-            {misViajes.filter(v =>
-              tab === 'Activos' ? ACTIVOS.includes(v.status) :
-              tab === 'Programados' ? PROGRAMADOS.includes(v.status) :
-              FINALIZADOS.includes(v.status)
-            ).length > 0 && (
+            {misViajes.filter(v => statusesDeTab(tab).includes(v.status)).length > 0 && (
               <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-white/20' : 'bg-slate-100'}`}>
-                {misViajes.filter(v =>
-                  tab === 'Activos' ? ACTIVOS.includes(v.status) :
-                  tab === 'Programados' ? PROGRAMADOS.includes(v.status) :
-                  FINALIZADOS.includes(v.status)
-                ).length}
+                {misViajes.filter(v => statusesDeTab(tab).includes(v.status)).length}
               </span>
             )}
           </button>
@@ -81,15 +76,18 @@ export default function ViewMisViajes() {
           <p className="text-slate-400 text-sm mb-4">
             {activeTab === 'Activos' ? 'No tienes viajes activos en este momento.' :
              activeTab === 'Programados' ? 'No tienes viajes programados.' :
+             activeTab === 'Cancelados' ? 'No tienes viajes cancelados.' :
              'No tienes viajes finalizados aún.'}
           </p>
-          <button
-            onClick={() => showView('view-solicitar')}
-            className="bg-rr-primary text-rr-secondary text-sm font-medium px-4 py-2 rounded-xl flex items-center gap-2 mx-auto"
-          >
-            <FontAwesomeIcon icon={faPlus} />
-            Solicitar traslado
-          </button>
+          {activeTab !== 'Cancelados' && (
+            <button
+              onClick={() => showView('view-solicitar')}
+              className="bg-rr-primary text-rr-secondary text-sm font-medium px-4 py-2 rounded-xl flex items-center gap-2 mx-auto"
+            >
+              <FontAwesomeIcon icon={faPlus} />
+              Solicitar traslado
+            </button>
+          )}
         </div>
       )}
 

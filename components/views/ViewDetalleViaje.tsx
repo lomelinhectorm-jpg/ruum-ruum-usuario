@@ -5,6 +5,7 @@ import { useApp } from '@/context/AppContext'
 import { cancelarViajeUsuario } from '@/lib/queries/usuario'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faSatelliteDish, faStar, faHeadset, faCheckCircle, faClock, faCircle, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import SoporteModal from '@/components/SoporteModal'
 
 // Mapa de eventos del timeline por status
 const TIMELINE_STEPS = [
@@ -37,6 +38,7 @@ export default function ViewDetalleViaje() {
   const [cancelando, setCancelando] = useState(false)
   const [errorCancelacion, setErrorCancelacion] = useState('')
   const [mostrarDetalleConductor, setMostrarDetalleConductor] = useState(false)
+  const [mostrarSoporte, setMostrarSoporte] = useState(false)
   const viaje = viajeSeleccionado
 
   if (!viaje) {
@@ -324,10 +326,13 @@ export default function ViewDetalleViaje() {
         )}
 
         {/* Soporte */}
-        <button className="w-full bg-white border border-slate-300 text-slate-700 font-semibold py-3 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
+        <button onClick={() => setMostrarSoporte(true)}
+          className="w-full bg-white border border-slate-300 text-slate-700 font-semibold py-3 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
           <FontAwesomeIcon icon={faHeadset} /> Contactar a soporte
         </button>
       </div>
+
+      {mostrarSoporte && <SoporteModal onClose={() => setMostrarSoporte(false)} />}
     </div>
   )
 }

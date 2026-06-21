@@ -8,6 +8,7 @@ import {
   getDocumentosUsuario, getUrlDocumento, subirDocumentoUsuario,
 } from '@/lib/queries/usuario'
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/constants/fiscal'
+import { TRANSMISIONES } from '@/lib/constants/vehiculo'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faArrowLeft, faChevronRight, faChevronDown, faChevronUp, faPen,
@@ -23,7 +24,8 @@ type Seccion =
 
 type VehiculoRow = {
   id: string; marca: string; modelo: string; anio: string | null
-  color: string | null; placas: string; transmision: string | null; created_at: string
+  color: string | null; placas: string; vin: string | null; transmision: string | null
+  alias: string | null; created_at: string
 }
 
 type DocumentoRow = {
@@ -352,7 +354,7 @@ function VehiculosSeccion({ onBack }: { onBack: () => void }) {
   const [vehiculos, setVehiculos] = useState<VehiculoRow[]>([])
   const [cargando, setCargando] = useState(true)
   const [mostrarForm, setMostrarForm] = useState(false)
-  const [form, setForm] = useState({ marca: '', modelo: '', anio: '', color: '', placas: '', transmision: '' })
+  const [form, setForm] = useState({ marca: '', modelo: '', anio: '', color: '', placas: '', vin: '', transmision: '', alias: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState(false)
   const [errorGeneral, setErrorGeneral] = useState('')
@@ -365,11 +367,20 @@ function VehiculosSeccion({ onBack }: { onBack: () => void }) {
       setVehiculos(data as VehiculoRow[])
     } catch (e) {
       console.error('Error cargando vehículos:', e)
+    } finally {
+      setCargando(false)
     }
-    setCargando(false)
   }
 
-  useEffect(() => { cargar() }, [usuario?.id])
+  useEffect(() => {
+    if (!usuario?.id) return
+    let activo = true
+    getVehiculosUsuario(usuario.id)
+      .then(data => { if (activo) setVehiculos(data as VehiculoRow[]) })
+      .catch(e => console.error('Error cargando vehículos:', e))
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [usuario?.id])
 
   const set = (k: keyof typeof form, v: string) => {
     setForm(f => ({ ...f, [k]: v }))
@@ -391,7 +402,7 @@ function VehiculosSeccion({ onBack }: { onBack: () => void }) {
     setErrorGeneral('')
     try {
       await agregarVehiculoUsuario(usuario.id, form)
-      setForm({ marca: '', modelo: '', anio: '', color: '', placas: '', transmision: '' })
+      setForm({ marca: '', modelo: '', anio: '', color: '', placas: '', vin: '', transmision: '', alias: '' })
       setMostrarForm(false)
       await cargar()
     } catch (e) {
@@ -434,7 +445,7 @@ function VehiculosSeccion({ onBack }: { onBack: () => void }) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-800 truncate">
-                    {v.marca} {v.modelo}{v.anio ? ` (${v.anio})` : ''}
+                    {v.alias ? `${v.alias} · ` : ''}{v.marca} {v.modelo}{v.anio ? ` (${v.anio})` : ''}
                   </p>
                   <p className="text-xs text-slate-500 truncate">
                     {v.placas}{v.color ? ` · ${v.color}` : ''}{v.transmision ? ` · ${v.transmision}` : ''}
@@ -475,17 +486,23 @@ function VehiculosSeccion({ onBack }: { onBack: () => void }) {
             </div>
             <div>
               <Label req>Placas</Label>
-              <input value={form.placas} placeholder="ABC-123" onChange={e => set('placas', e.target.value.toUpperCase())} className={inputCls(errors.placas)} />
+              <input value={form.placas} placeholder="ABC-1234" onChange={e => set('placas', e.target.value.toUpperCase())} className={inputCls(errors.placas)} />
               <ErrMsg msg={errors.placas} />
+            </div>
+            <div>
+              <Label>VIN</Label>
+              <input value={form.vin} placeholder="17 CARACTERES" onChange={e => set('vin', e.target.value.toUpperCase())} className={inputCls()} />
             </div>
             <div>
               <Label>Transmisión</Label>
               <select value={form.transmision} onChange={e => set('transmision', e.target.value)} className={`${inputCls()} bg-white`}>
                 <option value="">Seleccionar...</option>
-                <option>Automática</option>
-                <option>Manual</option>
-                <option>CVT</option>
+                {TRANSMISIONES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+            </div>
+            <div className="col-span-1 sm:col-span-2">
+              <Label>Alias / Apodo</Label>
+              <input value={form.alias} placeholder="EJ. CAMIONETA GRIS 1" onChange={e => set('alias', e.target.value.toUpperCase())} className={inputCls()} />
             </div>
           </div>
 
@@ -543,7 +560,14 @@ function FiscalSeccion({ onBack }: { onBack: () => void }) {
       console.error('Error cargando documentos fiscales:', e)
     }
   }
-  useEffect(() => { cargarDocs() }, [usuario?.id])
+  useEffect(() => {
+    if (!usuario?.id) return
+    let activo = true
+    getDocumentosUsuario(usuario.id)
+      .then(data => { if (activo) setDocumentos(data as DocumentoRow[]) })
+      .catch(e => console.error('Error cargando documentos fiscales:', e))
+    return () => { activo = false }
+  }, [usuario?.id])
 
   const set = (k: keyof typeof form, v: string) => {
     setForm(f => ({ ...f, [k]: v }))
@@ -680,10 +704,19 @@ function DocumentosSeccion({ onBack }: { onBack: () => void }) {
       setDocumentos(await getDocumentosUsuario(usuario.id) as DocumentoRow[])
     } catch (e) {
       console.error('Error cargando documentos:', e)
+    } finally {
+      setCargando(false)
     }
-    setCargando(false)
   }
-  useEffect(() => { cargar() }, [usuario?.id])
+  useEffect(() => {
+    if (!usuario?.id) return
+    let activo = true
+    getDocumentosUsuario(usuario.id)
+      .then(data => { if (activo) setDocumentos(data as DocumentoRow[]) })
+      .catch(e => console.error('Error cargando documentos:', e))
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [usuario?.id])
 
   const buscar = (slot: string) => documentos.find(d => d.archivo_url.includes(`/${slot}.`))
 

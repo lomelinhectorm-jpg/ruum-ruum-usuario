@@ -191,15 +191,23 @@ export async function solicitarViaje(
   usuario: { id: string; nombre: string; apellido: string },
   payload: {
     marca: string; modelo: string; anio?: string
-    color?: string; placas: string; transmision?: string
+    color?: string; placas: string; vin?: string; transmision?: string; alias?: string
     origen_calle: string; origen_numero?: string; origen_colonia?: string
-    origen_estado?: string; origen_cp?: string; origen_contacto?: string; origen_telefono?: string
+    origen_municipio?: string; origen_estado?: string; origen_cp?: string
+    origen_contacto?: string; origen_telefono?: string
     destino_calle: string; destino_numero?: string; destino_colonia?: string
-    destino_estado?: string; destino_cp?: string; destino_contacto?: string; destino_telefono?: string
+    destino_municipio?: string; destino_estado?: string; destino_cp?: string
+    destino_contacto?: string; destino_telefono?: string
     referencias?: string; instrucciones?: string
     fecha_programada?: string; hora_programada?: string
   }
 ) {
+  // Igual que en la Torre de Control: Municipio y Estado se capturan por
+  // separado en el formulario pero se guardan combinados en la misma
+  // columna `origen_estado` / `destino_estado` de la tabla `viajes`.
+  const origenEstado = [payload.origen_municipio, payload.origen_estado].filter(Boolean).join(', ')
+  const destinoEstado = [payload.destino_municipio, payload.destino_estado].filter(Boolean).join(', ')
+
   // Crear vehículo si no existe
   const { data: vehiculo } = await supabase
     .from('vehiculos')
@@ -210,7 +218,9 @@ export async function solicitarViaje(
       anio: payload.anio ?? null,
       color: payload.color?.toUpperCase() ?? null,
       placas: payload.placas.toUpperCase(),
+      vin: payload.vin?.toUpperCase() || null,
       transmision: payload.transmision ?? null,
+      alias: payload.alias?.toUpperCase() || null,
     })
     .select()
     .single()
@@ -224,14 +234,14 @@ export async function solicitarViaje(
       origen_calle: payload.origen_calle.toUpperCase(),
       origen_numero: payload.origen_numero ?? null,
       origen_colonia: payload.origen_colonia?.toUpperCase() ?? null,
-      origen_estado: payload.origen_estado?.toUpperCase() ?? null,
+      origen_estado: origenEstado.toUpperCase() || null,
       origen_cp: payload.origen_cp ?? null,
       origen_contacto: payload.origen_contacto?.toUpperCase() ?? null,
       origen_telefono: payload.origen_telefono ?? null,
       destino_calle: payload.destino_calle.toUpperCase(),
       destino_numero: payload.destino_numero ?? null,
       destino_colonia: payload.destino_colonia?.toUpperCase() ?? null,
-      destino_estado: payload.destino_estado?.toUpperCase() ?? null,
+      destino_estado: destinoEstado.toUpperCase() || null,
       destino_cp: payload.destino_cp ?? null,
       destino_contacto: payload.destino_contacto?.toUpperCase() ?? null,
       destino_telefono: payload.destino_telefono ?? null,
@@ -278,13 +288,16 @@ export function suscribirMisViajes(usuarioId: string, callback: () => void) {
 // actualización en vivo (hoy ViewDetalleViaje no la usa — solo muestra
 // lo que ya está cargado en la lista). No se modifica ni se conecta
 // aquí: eso es una decisión de producto, no de esta migración.
-export function suscribirMiViaje(viajeId: string, callback: (viaje: any) => void) {
+export function suscribirMiViaje(
+  viajeId: string,
+  callback: (viaje: Record<string, unknown>) => void,
+) {
   return supabase
     .channel(`usuario-viaje-${viajeId}`)
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'viajes', filter: `id=eq.${viajeId}` },
-      (payload) => callback(payload.new)
+      (payload) => callback(payload.new as Record<string, unknown>)
     )
     .subscribe()
 }
@@ -370,7 +383,7 @@ export async function getUrlFotoEvidencia(path: string) {
 export async function getVehiculosUsuario(usuarioId: string) {
   const { data, error } = await supabase
     .from('vehiculos')
-    .select('id, marca, modelo, anio, color, placas, transmision, created_at')
+    .select('id, marca, modelo, anio, color, placas, vin, transmision, alias, created_at')
     .eq('usuario_id', usuarioId)
     .order('created_at', { ascending: false })
 
@@ -380,7 +393,7 @@ export async function getVehiculosUsuario(usuarioId: string) {
 
 export async function agregarVehiculoUsuario(usuarioId: string, datos: {
   marca: string; modelo: string; anio?: string; color?: string
-  placas: string; transmision?: string
+  placas: string; vin?: string; transmision?: string; alias?: string
 }) {
   const { data, error } = await supabase
     .from('vehiculos')
@@ -391,9 +404,11 @@ export async function agregarVehiculoUsuario(usuarioId: string, datos: {
       anio: datos.anio ?? null,
       color: datos.color?.toUpperCase() ?? null,
       placas: datos.placas.toUpperCase(),
+      vin: datos.vin?.toUpperCase() || null,
       transmision: datos.transmision ?? null,
+      alias: datos.alias?.toUpperCase() || null,
     })
-    .select('id, marca, modelo, anio, color, placas, transmision, created_at')
+    .select('id, marca, modelo, anio, color, placas, vin, transmision, alias, created_at')
     .single()
 
   if (error) throw error

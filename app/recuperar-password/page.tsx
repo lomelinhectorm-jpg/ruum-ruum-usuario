@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 const iCls =
@@ -55,7 +56,7 @@ export default function RecuperarPasswordPage() {
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
         <p className="text-lg font-bold text-[#151515] mb-2">Enlace inválido o expirado</p>
         <p className="text-sm text-slate-500 mb-6">Solicita un nuevo enlace de recuperación desde la app.</p>
-        <a href="/" className="text-sm font-semibold text-[#151515] hover:underline">Volver al inicio</a>
+        <Link href="/" className="text-sm font-semibold text-[#151515] hover:underline">Volver al inicio</Link>
       </div>
     )
   }

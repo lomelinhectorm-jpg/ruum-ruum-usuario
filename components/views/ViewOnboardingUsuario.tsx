@@ -172,7 +172,9 @@ function StepRegister({ onBack, onNext }: {
     if (!form.email)           e.email    = 'Requerido'
     if (form.telefono.replace(/\D/g,'').length < 10) e.telefono = 'Ingresa 10 dígitos'
     if (!form.tipo)            e.tipo     = 'Requerido'
-    if (form.password.length < 8)               e.password  = 'Mínimo 8 caracteres'
+    if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
+      e.password = 'Mínimo 8 caracteres, una letra y un número'
+    }
     if (form.password !== form.confirmar)        e.confirmar = 'Las contraseñas no coinciden'
     if (form.requiereFactura) {
       if (!form.razonSocial)   e.razonSocial   = 'Requerido'
@@ -378,7 +380,7 @@ function StepRegister({ onBack, onNext }: {
             <div>
               <Label req>Contraseña</Label>
               <div className="relative">
-                <input type={show ? 'text' : 'password'} value={form.password} placeholder="Mínimo 8 caracteres"
+                <input type={show ? 'text' : 'password'} value={form.password} placeholder="8 caracteres, letra y número"
                   onChange={e => set('password', e.target.value)} className={iCls(errors.password)} />
                 <button type="button" onClick={() => setShow(s => !s)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">

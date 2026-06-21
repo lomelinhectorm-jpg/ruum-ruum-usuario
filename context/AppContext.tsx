@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useState, useEffect, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   getPerfilUsuario, crearPerfilDesdeAuth, getMisViajes,
@@ -55,27 +55,6 @@ export interface UsuarioPerfil {
   domicilio_fiscal: string | null
 }
 
-type UsuarioPerfilInsert = {
-  nombre: string
-  apellido: string
-  curp: string | null
-  email: string
-  telefono: string | null
-  tipo: string
-  estatus: string
-  calle: string | null
-  numero: string | null
-  colonia: string | null
-  municipio: string | null
-  estado_geo: string | null
-  codigo_postal: string | null
-  razon_social: string | null
-  rfc: string | null
-  regimen_fiscal: string | null
-  cfdi: string | null
-  domicilio_fiscal: string | null
-}
-
 interface AppContextType {
   currentView: ViewId
   currentStep: StepId
@@ -96,12 +75,12 @@ interface AppContextType {
 
 export interface DatosSolicitud {
   marca: string; modelo: string; anio?: string; color?: string
-  placas: string; transmision?: string
+  placas: string; vin?: string; transmision?: string; alias?: string
   origen_calle: string; origen_numero?: string; origen_colonia?: string
-  origen_estado?: string; origen_cp?: string
+  origen_municipio?: string; origen_estado?: string; origen_cp?: string
   origen_contacto?: string; origen_telefono?: string
   destino_calle: string; destino_numero?: string; destino_colonia?: string
-  destino_estado?: string; destino_cp?: string
+  destino_municipio?: string; destino_estado?: string; destino_cp?: string
   destino_contacto?: string; destino_telefono?: string
   referencias?: string; instrucciones?: string
   fecha_programada?: string; hora_programada?: string
@@ -117,7 +96,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [autenticado, setAutenticado] = useState(false)
   const [usuario, setUsuario] = useState<UsuarioPerfil | null>(null)
   const [misViajes, setMisViajes] = useState<ViajeUsuario[]>([])
-  const [cargandoViajes, setCargandoViajes] = useState(false)
+  const [cargandoViajes, setCargandoViajes] = useState(true)
 
   // Ref para acceder al usuario más reciente dentro de funciones async
   const usuarioRef = useRef<UsuarioPerfil | null>(null)
@@ -184,17 +163,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Cargar viajes y activar realtime cuando hay usuario ───────────────────
-  useEffect(() => {
-    if (!usuario) return
-    recargarViajes()
-
-    const channel = suscribirMisViajes(usuario.id, () => { recargarViajes() })
-
-    return () => { supabase.removeChannel(channel) }
-  }, [usuario])
-
-  const recargarViajes = async () => {
+  const recargarViajes = useCallback(async () => {
     const u = usuarioRef.current
     if (!u) return
     setCargandoViajes(true)
@@ -205,7 +174,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('Error cargando viajes:', e)
     }
     setCargandoViajes(false)
-  }
+  }, [])
+
+  // ── Cargar viajes y activar realtime cuando hay usuario ───────────────────
+  useEffect(() => {
+    if (!usuario) return
+    let activo = true
+
+    const cargarInicial = async () => {
+      try {
+        const data = await getMisViajes(usuario.id)
+        if (activo) setMisViajes(data as unknown as ViajeUsuario[])
+      } catch (e) {
+        console.error('Error cargando viajes:', e)
+      } finally {
+        if (activo) setCargandoViajes(false)
+      }
+    }
+    void cargarInicial()
+
+    const channel = suscribirMisViajes(usuario.id, () => { void recargarViajes() })
+
+    return () => {
+      activo = false
+      void supabase.removeChannel(channel)
+    }
+  }, [usuario, recargarViajes])
 
   // ── Solicitar viaje ────────────────────────────────────────────────────────
   const solicitarViaje = async (datos: DatosSolicitud): Promise<boolean> => {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { checkRegistrationRequest, isAcceptablePassword } from '@/lib/server/registration-security'
 
 type PerfilUsuario = {
   nombre: string
@@ -24,6 +25,14 @@ type PerfilUsuario = {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const MAX_FILE_BYTES = 3 * 1024 * 1024
+const MAX_REQUEST_BYTES = 10 * 1024 * 1024
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+}
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
@@ -36,7 +45,8 @@ async function subirDocumento(
   file: File,
   nombreArchivo: string
 ): Promise<string | null> {
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  const ext = EXTENSION_BY_TYPE[file.type]
+  if (!ext || file.size <= 0 || file.size > MAX_FILE_BYTES) return null
   const path = `usuarios/${authId}/${nombreArchivo}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
   const { error } = await admin.storage.from('documentos').upload(path, buffer, {
@@ -55,6 +65,16 @@ export async function POST(request: Request) {
     return badRequest('Falta configurar SUPABASE_SERVICE_ROLE_KEY en el servidor.', 500)
   }
 
+  const contentLength = Number(request.headers.get('content-length') ?? 0)
+  if (contentLength > MAX_REQUEST_BYTES) return badRequest('Solicitud demasiado grande.', 413)
+  const access = checkRegistrationRequest(request, 'usuario')
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.message },
+      { status: access.status, headers: access.retryAfter ? { 'Retry-After': String(access.retryAfter) } : undefined },
+    )
+  }
+
   const form = await request.formData().catch(() => null)
   if (!form) return badRequest('No se pudo leer el formulario.')
 
@@ -71,6 +91,15 @@ export async function POST(request: Request) {
 
   if (!perfil?.email || !password) return badRequest('Correo y contraseña son requeridos.')
   if (!perfil.nombre || !perfil.apellido || !perfil.tipo) return badRequest('Datos personales incompletos.')
+  if (!isAcceptablePassword(password)) {
+    return badRequest('La contraseña debe tener al menos 8 caracteres, una letra y un número.')
+  }
+
+  for (const file of [ineFrente, ineReverso, domicilio]) {
+    if (!file || file.size === 0) continue
+    if (file.size > MAX_FILE_BYTES) return badRequest('Cada documento debe pesar máximo 3 MB.', 413)
+    if (!EXTENSION_BY_TYPE[file.type]) return badRequest('Formato de documento no permitido.', 415)
+  }
 
   const email = String(perfil.email).toLowerCase().trim()
   const admin = createClient(supabaseUrl, serviceRoleKey, {
