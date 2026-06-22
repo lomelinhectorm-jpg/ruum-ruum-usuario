@@ -1,12 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from '@/context/AppContext'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faSpinner, faCheckCircle } from '@fortawesome/free-solid-svg-icons'
 import type { StepId } from '@/lib/types'
 import { RRButton, RRCard } from '@/components/rr'
 import { TRANSMISIONES } from '@/lib/constants/vehiculo'
+//import { getCatalogoTiposVehiculo } from '@/lib/queries/usuario'//
+import { getCatalogoTiposVehiculo } from '../../lib/queries/usuario';    // relativa (ajusta según la ubicación real de ViewSolicitar)
+
+
+
 
 function StepIndicator({ step, currentStep }: { step: number; currentStep: number }) {
   const active = step <= currentStep
@@ -31,18 +36,28 @@ export default function ViewSolicitar() {
   const { showView, currentStep, setStep, solicitarViaje } = useApp()
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState(false)
+  const [tiposVehiculo, setTiposVehiculo] = useState<{ id: string; nombre: string }[]>([])
+
+  useEffect(() => {
+    let activo = true
+    getCatalogoTiposVehiculo()
+      .then(data => { if (activo) setTiposVehiculo(data) })
+      .catch(e => console.error('Error cargando tipos de vehículo:', e))
+    return () => { activo = false }
+  }, [])
 
   // Datos del formulario
   const [form, setForm] = useState({
     // Vehículo
     marca: '', modelo: '', anio: '', color: '', placas: '', vin: '', transmision: '', alias: '',
+    tipoVehiculo: '',
     // Ruta
     origen_calle: '', origen_numero: '', origen_colonia: '', origen_municipio: '', origen_estado: '', origen_cp: '',
     origen_contacto: '', origen_telefono: '',
     destino_calle: '', destino_numero: '', destino_colonia: '', destino_municipio: '', destino_estado: '', destino_cp: '',
     destino_contacto: '', destino_telefono: '',
     referencias: '', instrucciones: '',
-    fecha_programada: '', hora_programada: '',
+    fecha_programada: '', hora_programada: '', kmEstimado: '',
   })
 
   const set = (k: keyof typeof form, v: string) =>
@@ -52,7 +67,10 @@ export default function ViewSolicitar() {
 
   const confirmar = async () => {
     setEnviando(true)
-    const ok = await solicitarViaje(form)
+    const ok = await solicitarViaje({
+      ...form,
+      kmEstimado: form.kmEstimado ? Number(form.kmEstimado) : undefined,
+    })
     setEnviando(false)
     if (ok) {
       setExito(true)
@@ -137,10 +155,12 @@ export default function ViewSolicitar() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>VIN</label>
-                <input type="text" value={form.vin}
-                  onChange={e => set('vin', e.target.value.toUpperCase())}
-                  placeholder="17 CARACTERES" className={inputCls} />
+                <label className={labelCls}>Tipo de vehículo *</label>
+                <select value={form.tipoVehiculo} onChange={e => set('tipoVehiculo', e.target.value)}
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Seleccionar...</option>
+                  {tiposVehiculo.map(t => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
+                </select>
               </div>
               <div>
                 <label className={labelCls}>Transmisión</label>
@@ -152,6 +172,12 @@ export default function ViewSolicitar() {
               </div>
             </div>
             <div>
+              <label className={labelCls}>VIN</label>
+              <input type="text" value={form.vin}
+                onChange={e => set('vin', e.target.value.toUpperCase())}
+                placeholder="17 CARACTERES" className={inputCls} />
+            </div>
+            <div>
               <label className={labelCls}>Alias / Apodo</label>
               <input type="text" value={form.alias}
                 onChange={e => set('alias', e.target.value.toUpperCase())}
@@ -160,7 +186,7 @@ export default function ViewSolicitar() {
           </div>
           <RRButton
             onClick={() => nextStep(2)}
-            disabled={!form.marca || !form.modelo || !form.placas}
+            disabled={!form.marca || !form.modelo || !form.placas || !form.tipoVehiculo}
             fullWidth
             className="mt-4"
           >
@@ -307,6 +333,15 @@ export default function ViewSolicitar() {
               onChange={e => set('hora_programada', e.target.value)} className={inputCls} />
           </div>
           <div>
+            <label className={labelCls}>Distancia aproximada (km) *</label>
+            <input type="number" min="1" value={form.kmEstimado}
+              onChange={e => set('kmEstimado', e.target.value.replace(/[^\d.]/g, ''))}
+              placeholder="30" className={inputCls} />
+            <p className="text-xs text-rr-gray500 mt-1">
+              Solo para darte una cotización estimada. El conductor confirma la distancia real al recoger el vehículo.
+            </p>
+          </div>
+          <div>
             <label className={labelCls}>Referencias del lugar</label>
             <input type="text" value={form.referencias}
               onChange={e => set('referencias', e.target.value.toUpperCase())}
@@ -328,7 +363,7 @@ export default function ViewSolicitar() {
               ← Vehículo
             </RRButton>
             <RRButton onClick={() => nextStep(3)}
-              disabled={!form.origen_calle || !form.destino_calle}
+              disabled={!form.origen_calle || !form.destino_calle || !form.kmEstimado}
               className="flex-1">
               Confirmar →
             </RRButton>
@@ -346,6 +381,7 @@ export default function ViewSolicitar() {
             <p className="font-semibold">{form.marca} {form.modelo} · {form.placas}</p>
             {form.alias && <p className="text-sm text-rr-gray500">&quot;{form.alias}&quot;</p>}
             {form.color && <p className="text-sm text-rr-gray500">{form.color} · {form.transmision || 'Sin especificar'}</p>}
+            {form.tipoVehiculo && <p className="text-sm text-rr-gray500">Tipo: {form.tipoVehiculo}</p>}
           </RRCard>
 
           <RRCard className="p-4 space-y-3">
@@ -367,6 +403,7 @@ export default function ViewSolicitar() {
                 )}
               </div>
             </div>
+            {form.kmEstimado && <p className="text-sm text-rr-gray500">📏 ~{form.kmEstimado} km estimados</p>}
             {form.fecha_programada && (
               <p className="text-sm text-rr-gray500">📅 {form.fecha_programada} {form.hora_programada && `· ${form.hora_programada}`}</p>
             )}

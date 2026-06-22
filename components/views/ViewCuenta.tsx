@@ -6,7 +6,13 @@ import { supabase } from '@/lib/supabase'
 import {
   getVehiculosUsuario, agregarVehiculoUsuario, eliminarVehiculoUsuario,
   getDocumentosUsuario, getUrlDocumento, subirDocumentoUsuario,
+  getCatalogoMetodosPago, getMetodosPagoUsuario, agregarMetodoPagoUsuario,
+  actualizarMetodoPagoUsuario, eliminarMetodoPagoUsuario, marcarMetodoPagoPredeterminado,
+  crearSetupIntentTarjeta, guardarMetodoPagoTarjeta,
+  type MetodoPagoUsuario,
 } from '@/lib/queries/usuario'
+import { getStripeBrowserClient } from '@/app/lib/stripe-client'
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { REGIMENES_FISCALES, USOS_CFDI } from '@/lib/constants/fiscal'
 import { TRANSMISIONES } from '@/lib/constants/vehiculo'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -14,7 +20,7 @@ import {
   faArrowLeft, faChevronRight, faChevronDown, faChevronUp, faPen,
   faIdCard, faPhone, faMapMarkerAlt, faCar, faPlus, faTrash,
   faFileInvoiceDollar, faUpload, faCreditCard, faQuestionCircle, faLock,
-  faSignOutAlt, faSpinner, faCheckCircle, faEye, faEyeSlash, faHeadset,
+  faSignOutAlt, faSpinner, faCheckCircle, faEye, faEyeSlash, faHeadset, faStar,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 
@@ -739,25 +745,400 @@ function DocumentosSeccion({ onBack }: { onBack: () => void }) {
 }
 
 // ─── 6. Métodos de pago ──────────────────────────────────────────────────────────
-// Aún no existe una tabla de métodos de pago en la base de datos — se deja
-// el espacio reservado y explicado para no aparentar una función que hoy
-// no persiste nada, en línea con otros placeholders ya existentes en la app.
+// El catálogo (qué métodos existen y cuáles están activos) lo define Torre
+// de Control en Configuración → Métodos de pago (tabla `metodos_pago`).
+// Las tarjetas se capturan y tokenizan con Stripe (ver lib/stripe-client.ts
+// y app/api/stripe/*) -- el número de tarjeta nunca pasa por este
+// servidor ni se guarda en Supabase, solo la marca y los últimos 4
+// dígitos que regresa Stripe. Métodos sin tarjeta (Efectivo, Transferencia
+// SPEI) se guardan directo, sin Stripe.
+const esMetodoTarjeta = (nombre?: string | null) => /tarjeta/i.test(nombre ?? '')
+
+const stripeElementOptions = {
+  style: {
+    base: { fontSize: '14px', color: '#1e293b', '::placeholder': { color: '#94a3b8' } },
+    invalid: { color: '#ef4444' },
+  },
+}
+
+// Formulario de alta de una tarjeta nueva. Vive dentro de <Elements> para
+// poder usar useStripe/useElements. El flujo es: 1) pide un SetupIntent al
+// servidor, 2) confirma la tarjeta directo con Stripe.js (stripe.com nunca
+// pasa por nuestro servidor), 3) ya con el SetupIntent confirmado, le pide
+// al servidor que verifique y guarde el resultado.
+function FormularioNuevaTarjeta({ metodoPagoId, onSaved, onCancel }: {
+  metodoPagoId: string
+  onSaved: (predeterminado: boolean) => void | Promise<void>
+  onCancel: () => void
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [alias, setAlias] = useState('')
+  const [titular, setTitular] = useState('')
+  const [predeterminado, setPredeterminado] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  const guardar = async () => {
+    if (!stripe || !elements) return
+    const cardElement = elements.getElement(CardElement)
+    if (!cardElement) return
+
+    setGuardando(true)
+    setError('')
+    try {
+      const { clientSecret } = await crearSetupIntentTarjeta()
+      const resultado = await stripe.confirmCardSetup(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: titular.trim() ? { name: titular.trim() } : undefined,
+        },
+      })
+
+      if (resultado.error) {
+        setError(resultado.error.message ?? 'Stripe rechazó la tarjeta. Verifica los datos.')
+        setGuardando(false)
+        return
+      }
+      const setupIntentId = resultado.setupIntent?.id
+      if (!setupIntentId) {
+        setError('No se pudo confirmar la captura de la tarjeta.')
+        setGuardando(false)
+        return
+      }
+
+      const nuevo = await guardarMetodoPagoTarjeta({ setupIntentId, metodoPagoId, alias })
+      if (predeterminado) await marcarMetodoPagoPredeterminado(nuevo.id)
+      await onSaved(predeterminado)
+    } catch (e) {
+      console.error('Error guardando tarjeta:', e)
+      setError(e instanceof Error ? e.message : 'No se pudo guardar la tarjeta. Intenta de nuevo.')
+    }
+    setGuardando(false)
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+      <div>
+        <Label>Datos de la tarjeta</Label>
+        <div className={inputCls() + ' py-3'}>
+          <CardElement options={stripeElementOptions} />
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1">
+          Tu tarjeta se captura directo con Stripe; nunca pasa por nuestros servidores.
+        </p>
+      </div>
+      <div>
+        <Label>Nombre del titular</Label>
+        <input
+          value={titular} placeholder="COMO APARECE EN LA TARJETA"
+          onChange={e => setTitular(e.target.value.toUpperCase())} className={inputCls()}
+        />
+      </div>
+      <div>
+        <Label>Alias</Label>
+        <input
+          value={alias} placeholder="EJ. TARJETA PRINCIPAL"
+          onChange={e => setAlias(e.target.value.toUpperCase())} className={inputCls()}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-slate-600 pt-1">
+        <input
+          type="checkbox" checked={predeterminado}
+          onChange={e => setPredeterminado(e.target.checked)} className="rounded border-slate-300"
+        />
+        Usar como método predeterminado
+      </label>
+
+      {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={onCancel}
+          className="flex-1 border border-slate-300 text-slate-600 font-medium py-3 rounded-xl hover:bg-slate-50 transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={guardar} disabled={guardando || !stripe}
+          className="flex-1 bg-slate-900 text-white font-semibold py-3 rounded-xl hover:bg-slate-800 disabled:opacity-60 transition-colors"
+        >
+          {guardando ? 'Guardando...' : 'Guardar tarjeta'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function PagosSeccion({ onBack }: { onBack: () => void }) {
+  const { usuario } = useApp()
+  const [catalogo, setCatalogo] = useState<{ id: string; nombre: string; descripcion: string | null }[]>([])
+  const [metodos, setMetodos] = useState<MetodoPagoUsuario[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [nuevoMetodoPagoId, setNuevoMetodoPagoId] = useState('')
+  const [form, setForm] = useState({ alias: '', predeterminado: false })
+  const [guardando, setGuardando] = useState(false)
+  const [errorGeneral, setErrorGeneral] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const cargar = async () => {
+    if (!usuario) return
+    setCargando(true)
+    try {
+      const [cat, propios] = await Promise.all([getCatalogoMetodosPago(), getMetodosPagoUsuario(usuario.id)])
+      setCatalogo(cat ?? [])
+      setMetodos(propios)
+    } catch (e) {
+      console.error('Error cargando métodos de pago:', e)
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!usuario?.id) return
+    let activo = true
+    Promise.all([getCatalogoMetodosPago(), getMetodosPagoUsuario(usuario.id)])
+      .then(([cat, propios]) => {
+        if (!activo) return
+        setCatalogo(cat ?? [])
+        setMetodos(propios)
+      })
+      .catch(e => console.error('Error cargando métodos de pago:', e))
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [usuario?.id])
+
+  const abrirNuevo = () => {
+    setEditId(null)
+    setNuevoMetodoPagoId(catalogo[0]?.id ?? '')
+    setForm({ alias: '', predeterminado: metodos.length === 0 })
+    setErrorGeneral('')
+    setMostrarForm(true)
+  }
+
+  const abrirEditar = (m: MetodoPagoUsuario) => {
+    setEditId(m.id)
+    setForm({ alias: m.alias ?? '', predeterminado: m.predeterminado })
+    setErrorGeneral('')
+    setMostrarForm(true)
+  }
+
+  const cerrarForm = () => {
+    setMostrarForm(false)
+    setEditId(null)
+    setErrorGeneral('')
+  }
+
+  const metodoNuevoSeleccionado = catalogo.find(c => c.id === nuevoMetodoPagoId)
+  const esNuevaTarjeta = !editId && esMetodoTarjeta(metodoNuevoSeleccionado?.nombre)
+
+  // Guarda métodos SIN tarjeta (Efectivo, Transferencia...) y la edición
+  // de alias/predeterminado de cualquier método ya existente. La captura
+  // de tarjetas nuevas la maneja FormularioNuevaTarjeta por separado,
+  // porque necesita el flujo de Stripe.
+  const guardarSimple = async () => {
+    if (!usuario) return
+    setGuardando(true)
+    setErrorGeneral('')
+    try {
+      let idAfectado = editId
+      if (editId) {
+        await actualizarMetodoPagoUsuario(editId, { alias: form.alias })
+      } else {
+        const creado = await agregarMetodoPagoUsuario(usuario.id, { metodoPagoId: nuevoMetodoPagoId, alias: form.alias })
+        idAfectado = creado.id
+      }
+      if (form.predeterminado && idAfectado) await marcarMetodoPagoPredeterminado(idAfectado)
+      cerrarForm()
+      await cargar()
+    } catch (e) {
+      console.error('Error guardando método de pago:', e)
+      setErrorGeneral('No se pudo guardar el método de pago. Intenta de nuevo.')
+    }
+    setGuardando(false)
+  }
+
+  const tarjetaGuardada = async () => {
+    cerrarForm()
+    await cargar()
+  }
+
+  const eliminar = async (id: string) => {
+    try {
+      await eliminarMetodoPagoUsuario(id)
+      setConfirmDelete(null)
+      await cargar()
+    } catch (e) {
+      console.error('Error eliminando método de pago:', e)
+    }
+  }
+
+  const marcarPredeterminado = async (id: string) => {
+    try {
+      await marcarMetodoPagoPredeterminado(id)
+      await cargar()
+    } catch (e) {
+      console.error('Error marcando método predeterminado:', e)
+    }
+  }
+
   return (
     <div className="fade-in p-5 pb-24">
       <SubHeader title="Métodos de pago" onBack={onBack} />
-      <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-        <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 text-2xl mx-auto mb-4">
-          <FontAwesomeIcon icon={faCreditCard} />
+
+      {cargando ? (
+        <div className="space-y-3 mb-4">
+          {[1, 2].map(i => <div key={i} className="h-20 animate-pulse bg-slate-100 rounded-xl" />)}
         </div>
-        <p className="text-sm font-semibold text-slate-700">Aún no tienes métodos de pago</p>
-        <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto">
-          Muy pronto podrás agregar tarjetas y administrar tus pagos directamente desde aquí. Por ahora, el cobro de cada viaje se acuerda con soporte.
-        </p>
-        <span className="inline-block mt-4 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 px-3 py-1 rounded-full">
-          Próximamente
-        </span>
-      </div>
+      ) : catalogo.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center mb-4">
+          <FontAwesomeIcon icon={faCreditCard} className="text-3xl text-slate-300 mb-2" />
+          <p className="text-sm font-semibold text-slate-700">Aún no hay métodos de pago disponibles</p>
+          <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto">
+            El administrador todavía no habilita formas de pago en la plataforma. Por ahora, el cobro de cada viaje se acuerda con soporte.
+          </p>
+        </div>
+      ) : (
+        <>
+          {metodos.length === 0 && !mostrarForm && (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center mb-4">
+              <FontAwesomeIcon icon={faCreditCard} className="text-3xl text-slate-300 mb-2" />
+              <p className="text-sm font-medium text-slate-600">Aún no tienes métodos de pago guardados.</p>
+            </div>
+          )}
+
+          {metodos.length > 0 && (
+            <div className="space-y-3 mb-4">
+              {metodos.map(m => (
+                <div key={m.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600 flex-shrink-0">
+                      <FontAwesomeIcon icon={faCreditCard} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate flex items-center gap-2">
+                        <span className="truncate">{m.alias || m.metodos_pago?.nombre || 'Método de pago'}</span>
+                        {m.predeterminado && (
+                          <span className="text-[10px] font-bold uppercase text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                            Predeterminado
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {m.marca ? m.marca.toUpperCase() : m.metodos_pago?.nombre}
+                        {m.ultimos_digitos ? ` · •••• ${m.ultimos_digitos}` : ''}
+                        {m.titular ? ` · ${m.titular}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {!m.predeterminado && (
+                      <button
+                        onClick={() => marcarPredeterminado(m.id)} title="Marcar como predeterminado"
+                        className="text-slate-400 hover:text-blue-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-blue-50"
+                      >
+                        <FontAwesomeIcon icon={faStar} className="text-xs" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => abrirEditar(m)}
+                      className="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100"
+                    >
+                      <FontAwesomeIcon icon={faPen} className="text-xs" />
+                    </button>
+                    {confirmDelete === m.id ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs flex-shrink-0">
+                        <button onClick={() => eliminar(m.id)} className="text-red-600 font-medium hover:underline">Sí</button>
+                        <button onClick={() => setConfirmDelete(null)} className="text-slate-400 hover:underline">No</button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(m.id)}
+                        className="text-slate-400 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50"
+                      >
+                        <FontAwesomeIcon icon={faTrash} className="text-xs" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {mostrarForm ? (
+            !editId && (
+              <div className="mb-3">
+                <Label req>Método de pago</Label>
+                <select
+                  value={nuevoMetodoPagoId} onChange={e => setNuevoMetodoPagoId(e.target.value)}
+                  className={inputCls()}
+                >
+                  {catalogo.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+                {metodoNuevoSeleccionado?.descripcion && (
+                  <p className="text-xs text-slate-400 mt-1">{metodoNuevoSeleccionado.descripcion}</p>
+                )}
+              </div>
+            )
+          ) : null}
+
+          {mostrarForm && esNuevaTarjeta ? (
+            <Elements stripe={getStripeBrowserClient()}>
+              <FormularioNuevaTarjeta
+                metodoPagoId={nuevoMetodoPagoId}
+                onSaved={tarjetaGuardada}
+                onCancel={cerrarForm}
+              />
+            </Elements>
+          ) : mostrarForm ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+              <div>
+                <Label>Alias</Label>
+                <input
+                  value={form.alias} placeholder="EJ. EFECTIVO EN SITIO"
+                  onChange={e => setForm(f => ({ ...f, alias: e.target.value.toUpperCase() }))}
+                  className={inputCls()}
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-600 pt-1">
+                <input
+                  type="checkbox" checked={form.predeterminado}
+                  onChange={e => setForm(f => ({ ...f, predeterminado: e.target.checked }))}
+                  className="rounded border-slate-300"
+                />
+                Usar como método predeterminado
+              </label>
+
+              {errorGeneral && <p className="text-xs text-red-500 font-medium">{errorGeneral}</p>}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={cerrarForm}
+                  className="flex-1 border border-slate-300 text-slate-600 font-medium py-3 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarSimple} disabled={guardando}
+                  className="flex-1 bg-slate-900 text-white font-semibold py-3 rounded-xl hover:bg-slate-800 disabled:opacity-60 transition-colors"
+                >
+                  {guardando ? 'Guardando...' : 'Guardar método'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={abrirNuevo}
+              className="w-full border-2 border-dashed border-slate-300 text-slate-500 font-medium py-3 rounded-xl hover:border-slate-400 hover:text-slate-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <FontAwesomeIcon icon={faPlus} /> Agregar método de pago
+            </button>
+          )}
+        </>
+      )}
     </div>
   )
 }

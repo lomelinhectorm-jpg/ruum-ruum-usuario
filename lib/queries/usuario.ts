@@ -142,6 +142,25 @@ export async function crearPerfilDesdeAuth(user: {
 
 // ── VIAJES ──────────────────────────────────────────────────
 
+// Catálogo dinámico de tipos de vehículo que administra Torre en
+// Configuración → Tipos de vehículo (tabla `configuracion`, clave
+// 'tipos_vehiculo'). Solo se exponen los activos. RLS aditiva: ver
+// docs/sql/solicitar_viaje_tipo_vehiculo_km.sql en torre.
+export async function getCatalogoTiposVehiculo() {
+  const { data, error } = await supabase
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', 'tipos_vehiculo')
+    .maybeSingle()
+
+  if (error) throw error
+  const parsed = data?.valor ? JSON.parse(String(data.valor)) : []
+  if (!Array.isArray(parsed)) return []
+  return (parsed as Record<string, unknown>[])
+    .filter(t => t.activo !== false)
+    .map(t => ({ id: String(t.id ?? ''), nombre: String(t.nombre ?? '') }))
+}
+
 export async function getMisViajes(usuarioId: string) {
   const { data, error } = await supabase
     .from('viajes')
@@ -192,6 +211,7 @@ export async function solicitarViaje(
   payload: {
     marca: string; modelo: string; anio?: string
     color?: string; placas: string; vin?: string; transmision?: string; alias?: string
+    tipoVehiculo?: string; kmEstimado?: number
     origen_calle: string; origen_numero?: string; origen_colonia?: string
     origen_municipio?: string; origen_estado?: string; origen_cp?: string
     origen_contacto?: string; origen_telefono?: string
@@ -221,6 +241,7 @@ export async function solicitarViaje(
       vin: payload.vin?.toUpperCase() || null,
       transmision: payload.transmision ?? null,
       alias: payload.alias?.toUpperCase() || null,
+      tipo_vehiculo: payload.tipoVehiculo || null,
     })
     .select()
     .single()
@@ -249,6 +270,7 @@ export async function solicitarViaje(
       instrucciones: payload.instrucciones ?? null,
       fecha_programada: payload.fecha_programada ?? null,
       hora_programada: payload.hora_programada ?? null,
+      km_estimado: payload.kmEstimado ?? null,
       status: 'Solicitud recibida',
     })
     .select()
@@ -418,6 +440,179 @@ export async function agregarVehiculoUsuario(usuarioId: string, datos: {
 export async function eliminarVehiculoUsuario(vehiculoId: string) {
   const { error } = await supabase.from('vehiculos').delete().eq('id', vehiculoId)
   if (error) throw error
+}
+
+// ── MÉTODOS DE PAGO ─────────────────────────────────────────
+
+// Catálogo global de métodos de pago. Lo administra Torre de Control en
+// Configuración → Métodos de pago (tabla `metodos_pago`, compartida con
+// admin-web). Aquí solo se exponen los métodos activos: el alta, baja o
+// desactivación de una forma de pago para toda la plataforma se gestiona
+// exclusivamente desde ese panel, nunca desde la app de usuario.
+export async function getCatalogoMetodosPago() {
+  const { data, error } = await supabase
+    .from('metodos_pago')
+    .select('id, nombre, descripcion')
+    .eq('activo', true)
+    .order('created_at')
+
+  if (error) throw error
+  return data
+}
+
+export type MetodoPagoUsuario = {
+  id: string
+  metodo_pago_id: string
+  alias: string | null
+  titular: string | null
+  ultimos_digitos: string | null
+  marca: string | null
+  predeterminado: boolean
+  activo: boolean
+  created_at: string
+  metodos_pago: { nombre: string; descripcion: string | null } | null
+}
+
+// Métodos de pago que el propio usuario registró sobre el catálogo. Viven
+// en `metodos_pago_usuario`, con RLS que solo permite a cada usuario leer
+// y modificar sus propios registros (ver docs/sql/metodos_pago_usuario.sql
+// y docs/sql/stripe_metodos_pago.sql en torre). Las tarjetas reales
+// (marca, últimos 4 dígitos) se capturan vía Stripe -- ver
+// crearSetupIntentTarjeta / guardarMetodoPagoTarjeta más abajo -- nunca se
+// escriben a mano desde este archivo.
+export async function getMetodosPagoUsuario(usuarioId: string) {
+  const { data, error } = await supabase
+    .from('metodos_pago_usuario')
+    .select(`
+      id, metodo_pago_id, alias, titular, ultimos_digitos, marca,
+      predeterminado, activo, created_at,
+      metodos_pago(nombre, descripcion)
+    `)
+    .eq('usuario_id', usuarioId)
+    .order('predeterminado', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data as unknown as MetodoPagoUsuario[]
+}
+
+// Solo para métodos SIN tarjeta (Efectivo, Transferencia SPEI...). Para
+// tarjetas, usar crearSetupIntentTarjeta + guardarMetodoPagoTarjeta, que
+// tokenizan con Stripe en vez de guardar dígitos sueltos.
+export async function agregarMetodoPagoUsuario(usuarioId: string, datos: {
+  metodoPagoId: string; alias?: string
+}) {
+  const { data, error } = await supabase
+    .from('metodos_pago_usuario')
+    .insert({
+      usuario_id: usuarioId,
+      metodo_pago_id: datos.metodoPagoId,
+      alias: datos.alias?.trim() || null,
+    })
+    .select(`
+      id, metodo_pago_id, alias, titular, ultimos_digitos, marca,
+      predeterminado, activo, created_at,
+      metodos_pago(nombre, descripcion)
+    `)
+    .single()
+
+  if (error) throw error
+  return data as unknown as MetodoPagoUsuario
+}
+
+export async function actualizarMetodoPagoUsuario(id: string, datos: { alias?: string }) {
+  const { data, error } = await supabase
+    .from('metodos_pago_usuario')
+    .update({ alias: datos.alias?.trim() || null })
+    .eq('id', id)
+    .select(`
+      id, metodo_pago_id, alias, titular, ultimos_digitos, marca,
+      predeterminado, activo, created_at,
+      metodos_pago(nombre, descripcion)
+    `)
+    .single()
+
+  if (error) throw error
+  return data as unknown as MetodoPagoUsuario
+}
+
+// Va por una ruta API (no delete directo) porque si el método tiene una
+// tarjeta de Stripe asociada, hay que "detach"-arla en Stripe también --
+// si solo se borra la fila local, la tarjeta se queda viva del lado de
+// Stripe. Ver app/api/stripe/eliminar-metodo-pago.
+export async function eliminarMetodoPagoUsuario(id: string) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Sesión no válida.')
+
+  const res = await fetch('/api/stripe/eliminar-metodo-pago', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ metodoId: id }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    throw new Error(data?.error ?? 'No se pudo eliminar el método de pago.')
+  }
+}
+
+// Cambia cuál es el método predeterminado del usuario. Va por una función
+// RPC (security definer) en vez de dos UPDATE sueltos desde el cliente:
+// hay un índice único parcial en `metodos_pago_usuario` que garantiza un
+// solo registro `predeterminado = true` por usuario, y dos updates
+// independientes podrían chocar contra ese índice si el primero todavía
+// no se confirma. La función hace el cambio en una sola transacción.
+export async function marcarMetodoPagoPredeterminado(metodoId: string) {
+  const { error } = await supabase.rpc('establecer_metodo_pago_predeterminado', {
+    p_metodo_id: metodoId,
+  })
+  if (error) throw error
+}
+
+// ── TARJETAS REALES VÍA STRIPE ───────────────────────────────
+// Flujo de 2 pasos para no manejar nunca un número de tarjeta en este
+// código: 1) crearSetupIntentTarjeta abre la captura con Stripe y regresa
+// un client_secret; el componente lo usa con @stripe/react-stripe-js
+// (CardElement + stripe.confirmCardSetup) para tokenizar la tarjeta
+// directo con Stripe, sin pasar por este servidor. 2) con el
+// setupIntentId ya confirmado, guardarMetodoPagoTarjeta le pide al
+// servidor que verifique la captura y guarde el resultado (marca,
+// últimos 4 dígitos, el payment_method_id de Stripe).
+export async function crearSetupIntentTarjeta() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Sesión no válida.')
+
+  const res = await fetch('/api/stripe/setup-intent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    throw new Error(data?.error ?? 'No se pudo iniciar la captura de la tarjeta.')
+  }
+  return res.json() as Promise<{ clientSecret: string }>
+}
+
+export async function guardarMetodoPagoTarjeta(datos: {
+  setupIntentId: string; metodoPagoId: string; alias?: string
+}) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Sesión no válida.')
+
+  const res = await fetch('/api/stripe/guardar-metodo-pago', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({
+      setupIntentId: datos.setupIntentId,
+      metodoPagoId: datos.metodoPagoId,
+      alias: datos.alias,
+    }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    throw new Error(data?.error ?? 'No se pudo guardar la tarjeta.')
+  }
+  const data = await res.json() as { ok: true; metodo: MetodoPagoUsuario }
+  return data.metodo
 }
 
 // ── DOCUMENTOS ──────────────────────────────────────────────

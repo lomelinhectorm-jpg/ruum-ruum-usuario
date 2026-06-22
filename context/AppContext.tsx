@@ -84,6 +84,7 @@ export interface DatosSolicitud {
   destino_contacto?: string; destino_telefono?: string
   referencias?: string; instrucciones?: string
   fecha_programada?: string; hora_programada?: string
+  kmEstimado?: number
 }
 
 const AppContext = createContext<AppContextType | null>(null)
