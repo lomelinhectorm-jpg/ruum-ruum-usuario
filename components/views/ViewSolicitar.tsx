@@ -8,7 +8,8 @@ import type { StepId } from '@/lib/types'
 import { RRButton, RRCard } from '@/components/rr'
 import { TRANSMISIONES } from '@/lib/constants/vehiculo'
 //import { getCatalogoTiposVehiculo } from '@/lib/queries/usuario'//
-import { getCatalogoTiposVehiculo, getCatalogoTiposServicio } from '../../lib/queries/usuario';    // relativa (ajusta según la ubicación real de ViewSolicitar)
+import { getCatalogoTiposVehiculo, getCatalogoTiposServicio, verificarCoberturaZona } from '../../lib/queries/usuario';    // relativa (ajusta según la ubicación real de ViewSolicitar)
+import { ESTADOS_MEXICO } from '@/lib/estadosMexico'
 
 
 
@@ -72,6 +73,34 @@ export default function ViewSolicitar() {
     setForm(f => ({ ...f, [k]: v }))
 
   const nextStep = (step: StepId) => setStep(step)
+
+  // Cobertura por estado/municipio — ver lib/queries/usuario.ts. Se valida
+  // el ORIGEN (de donde se recoge el vehículo), no el destino: Ruum es un
+  // servicio de traslado entre lugares, así que es normal que el destino
+  // quede en otro estado.
+  //
+  // `configurada` empieza en false y solo se vuelve true cuando ya
+  // sabemos la respuesta real: mientras tanto sinCobertura es false (no
+  // bloquea) sin necesidad de un flag de "cargando" aparte.
+  const [cobertura, setCobertura] = useState<{ cubierta: boolean; configurada: boolean; estadosCubiertos: string[] }>(
+    { cubierta: true, configurada: false, estadosCubiertos: [] }
+  )
+
+  useEffect(() => {
+    if (!form.origen_estado) return
+    let activo = true
+    verificarCoberturaZona(form.origen_estado, form.origen_municipio)
+      .then(res => { if (activo) setCobertura(res) })
+      .catch(e => {
+        console.error('Error verificando cobertura de zona:', e)
+        // Si la verificación falla (red, RLS, etc.) no bloqueamos al cliente
+        // por un problema técnico nuestro — se deja pasar y Admin revisa.
+        if (activo) setCobertura({ cubierta: true, configurada: false, estadosCubiertos: [] })
+      })
+    return () => { activo = false }
+  }, [form.origen_estado, form.origen_municipio])
+
+  const sinCobertura = Boolean(form.origen_estado) && cobertura.configurada && !cobertura.cubierta
 
   const confirmar = async () => {
     setEnviando(true)
@@ -257,11 +286,21 @@ export default function ViewSolicitar() {
               </div>
               <div>
                 <label className={labelCls}>Estado</label>
-                <input type="text" value={form.origen_estado}
-                  onChange={e => set('origen_estado', e.target.value.toUpperCase())}
-                  placeholder="CIUDAD DE MÉXICO" className={inputCls} />
+                <select value={form.origen_estado} onChange={e => set('origen_estado', e.target.value)}
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Seleccionar...</option>
+                  {ESTADOS_MEXICO.map(estado => <option key={estado} value={estado}>{estado}</option>)}
+                </select>
               </div>
             </div>
+            {sinCobertura && (
+              <div className="bg-rr-warningLight/70 border border-rr-warningLight rounded-rrMd p-3 text-xs text-rr-black">
+                <p className="font-bold">Por el momento no operamos en {form.origen_estado}.</p>
+                {cobertura.estadosCubiertos.length > 0 && (
+                  <p className="mt-1 text-rr-gray500">Estados con cobertura: {cobertura.estadosCubiertos.join(', ')}.</p>
+                )}
+              </div>
+            )}
             <div>
               <label className={labelCls}>Nombre del responsable de entrega</label>
               <input type="text" value={form.origen_contacto}
@@ -318,9 +357,11 @@ export default function ViewSolicitar() {
               </div>
               <div>
                 <label className={labelCls}>Estado</label>
-                <input type="text" value={form.destino_estado}
-                  onChange={e => set('destino_estado', e.target.value.toUpperCase())}
-                  placeholder="ESTADO DE MÉXICO" className={inputCls} />
+                <select value={form.destino_estado} onChange={e => set('destino_estado', e.target.value)}
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Seleccionar...</option>
+                  {ESTADOS_MEXICO.map(estado => <option key={estado} value={estado}>{estado}</option>)}
+                </select>
               </div>
             </div>
             <div>
@@ -381,7 +422,7 @@ export default function ViewSolicitar() {
               ← Vehículo
             </RRButton>
             <RRButton onClick={() => nextStep(3)}
-              disabled={!form.origen_calle || !form.destino_calle || !form.kmEstimado}
+              disabled={!form.origen_calle || !form.destino_calle || !form.kmEstimado || sinCobertura}
               className="flex-1">
               Confirmar →
             </RRButton>

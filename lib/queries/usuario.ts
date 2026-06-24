@@ -1,6 +1,7 @@
 // lib/queries/usuario.ts — usuario-ruum
 
 import { supabase } from '@/lib/supabase'
+import { normalizarEstado } from '@/lib/estadosMexico'
 
 // ── AUTH ────────────────────────────────────────────────────
 
@@ -178,6 +179,55 @@ export async function getCatalogoTiposServicio() {
   return (data ?? []).map(t => ({
     id: String(t.id), nombre: String(t.nombre ?? ''), descripcion: String(t.descripcion ?? ''),
   }))
+}
+
+// Verifica si el ORIGEN de la solicitud (de donde se recoge el vehículo)
+// cae dentro de alguna zona activa configurada en Torre. El destino no se
+// valida a propósito: Ruum es un servicio de traslado/reubicación, así que
+// es normal que el destino esté en otro estado — lo que importa es tener
+// presencia operativa donde se recoge el vehículo.
+//
+// Comportamiento si NO hay ninguna zona activa configurada todavía: no se
+// bloquea a nadie (cubierta: true). Bloquear por un catálogo vacío dejaría
+// fuera a todos los clientes por un olvido de configuración, no por una
+// cobertura real. En cuanto exista al menos una zona activa, sí se exige
+// que el estado (y municipio, si la zona lo restringe) coincida.
+export async function verificarCoberturaZona(estado: string, municipio?: string): Promise<{
+  cubierta: boolean
+  configurada: boolean
+  estadosCubiertos: string[]
+}> {
+  const { data, error } = await supabase
+    .from('zonas')
+    .select('estados, municipios')
+    .eq('activa', true)
+
+  if (error) throw error
+  const zonas = data ?? []
+
+  if (zonas.length === 0) {
+    return { cubierta: true, configurada: false, estadosCubiertos: [] }
+  }
+
+  const estadoNorm = normalizarEstado(estado)
+  const municipioNorm = municipio ? normalizarEstado(municipio) : ''
+  const estadosCubiertos = new Set<string>()
+  let cubierta = false
+
+  for (const zona of zonas) {
+    const estadosZona = Array.isArray(zona.estados) ? (zona.estados as string[]) : []
+    const municipiosZona = Array.isArray(zona.municipios) ? (zona.municipios as string[]) : []
+    const coincideEstado = estadosZona.some(e => normalizarEstado(e) === estadoNorm)
+    if (!coincideEstado) continue
+    estadosZona.forEach(e => estadosCubiertos.add(e))
+    // Si la zona no restringe municipios, todo el estado cuenta como cubierto.
+    // Si sí restringe, el municipio capturado debe coincidir con la lista.
+    if (municipiosZona.length === 0 || (municipioNorm && municipiosZona.some(m => normalizarEstado(m) === municipioNorm))) {
+      cubierta = true
+    }
+  }
+
+  return { cubierta, configurada: true, estadosCubiertos: Array.from(estadosCubiertos) }
 }
 
 export async function getMisViajes(usuarioId: string) {
