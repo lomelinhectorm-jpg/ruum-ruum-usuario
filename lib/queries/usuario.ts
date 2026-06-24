@@ -161,6 +161,25 @@ export async function getCatalogoTiposVehiculo() {
     .map(t => ({ id: String(t.id ?? ''), nombre: String(t.nombre ?? '') }))
 }
 
+// Catálogo de tipos de servicio que administra Torre en Configuración →
+// Tipos de servicio (tabla `tipos_servicio`). A diferencia de tipos de
+// vehículo (que vive como JSON en `configuracion`), esta es una tabla real
+// con id propio — por eso el viaje guarda `tipo_servicio_id` como FK en
+// lugar de un nombre libre. RLS aditiva: ver
+// docs/sql/catalogos_publicos_clientes.sql en torre.
+export async function getCatalogoTiposServicio() {
+  const { data, error } = await supabase
+    .from('tipos_servicio')
+    .select('id, nombre, descripcion')
+    .eq('activo', true)
+    .order('created_at')
+
+  if (error) throw error
+  return (data ?? []).map(t => ({
+    id: String(t.id), nombre: String(t.nombre ?? ''), descripcion: String(t.descripcion ?? ''),
+  }))
+}
+
 export async function getMisViajes(usuarioId: string) {
   const { data, error } = await supabase
     .from('viajes')
@@ -212,6 +231,7 @@ export async function solicitarViaje(
     marca: string; modelo: string; anio?: string
     color?: string; placas: string; vin?: string; transmision?: string; alias?: string
     tipoVehiculo?: string; kmEstimado?: number
+    tipoServicioId?: string
     origen_calle: string; origen_numero?: string; origen_colonia?: string
     origen_municipio?: string; origen_estado?: string; origen_cp?: string
     origen_contacto?: string; origen_telefono?: string
@@ -271,6 +291,7 @@ export async function solicitarViaje(
       fecha_programada: payload.fecha_programada ?? null,
       hora_programada: payload.hora_programada ?? null,
       km_estimado: payload.kmEstimado ?? null,
+      tipo_servicio_id: payload.tipoServicioId || null,
       status: 'Solicitud recibida',
     })
     .select()

@@ -8,7 +8,7 @@ import type { StepId } from '@/lib/types'
 import { RRButton, RRCard } from '@/components/rr'
 import { TRANSMISIONES } from '@/lib/constants/vehiculo'
 //import { getCatalogoTiposVehiculo } from '@/lib/queries/usuario'//
-import { getCatalogoTiposVehiculo } from '../../lib/queries/usuario';    // relativa (ajusta según la ubicación real de ViewSolicitar)
+import { getCatalogoTiposVehiculo, getCatalogoTiposServicio } from '../../lib/queries/usuario';    // relativa (ajusta según la ubicación real de ViewSolicitar)
 
 
 
@@ -37,12 +37,19 @@ export default function ViewSolicitar() {
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState(false)
   const [tiposVehiculo, setTiposVehiculo] = useState<{ id: string; nombre: string }[]>([])
+  const [tiposServicio, setTiposServicio] = useState<{ id: string; nombre: string; descripcion: string }[]>([])
 
   useEffect(() => {
     let activo = true
     getCatalogoTiposVehiculo()
       .then(data => { if (activo) setTiposVehiculo(data) })
       .catch(e => console.error('Error cargando tipos de vehículo:', e))
+    // Catálogo de tipos de servicio (Configuración → Tipos de servicio en
+    // Torre). Si no hay ninguno activo configurado, el selector simplemente
+    // no se muestra — no bloqueamos la solicitud por esto.
+    getCatalogoTiposServicio()
+      .then(data => { if (activo) setTiposServicio(data) })
+      .catch(e => console.error('Error cargando tipos de servicio:', e))
     return () => { activo = false }
   }, [])
 
@@ -51,6 +58,7 @@ export default function ViewSolicitar() {
     // Vehículo
     marca: '', modelo: '', anio: '', color: '', placas: '', vin: '', transmision: '', alias: '',
     tipoVehiculo: '',
+    tipoServicioId: '',
     // Ruta
     origen_calle: '', origen_numero: '', origen_colonia: '', origen_municipio: '', origen_estado: '', origen_cp: '',
     origen_contacto: '', origen_telefono: '',
@@ -171,6 +179,16 @@ export default function ViewSolicitar() {
                 </select>
               </div>
             </div>
+            {tiposServicio.length > 0 && (
+              <div>
+                <label className={labelCls}>Tipo de servicio</label>
+                <select value={form.tipoServicioId} onChange={e => set('tipoServicioId', e.target.value)}
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Sin preferencia</option>
+                  {tiposServicio.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className={labelCls}>VIN</label>
               <input type="text" value={form.vin}
@@ -382,6 +400,11 @@ export default function ViewSolicitar() {
             {form.alias && <p className="text-sm text-rr-gray500">&quot;{form.alias}&quot;</p>}
             {form.color && <p className="text-sm text-rr-gray500">{form.color} · {form.transmision || 'Sin especificar'}</p>}
             {form.tipoVehiculo && <p className="text-sm text-rr-gray500">Tipo: {form.tipoVehiculo}</p>}
+            {form.tipoServicioId && (
+              <p className="text-sm text-rr-gray500">
+                Servicio: {tiposServicio.find(t => t.id === form.tipoServicioId)?.nombre ?? '—'}
+              </p>
+            )}
           </RRCard>
 
           <RRCard className="p-4 space-y-3">
