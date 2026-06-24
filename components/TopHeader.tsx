@@ -1,7 +1,6 @@
 'use client'
 
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faBell } from '@fortawesome/free-solid-svg-icons'
+import NotificacionesBell from './NotificacionesBell'
 
 export default function TopHeader() {
   return (
@@ -15,10 +14,7 @@ export default function TopHeader() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="relative h-10 w-10 rounded-full bg-white/10 text-white/50 cursor-not-allowed" disabled
-            title="Notificaciones — próximamente">
-            <FontAwesomeIcon icon={faBell} className="text-base" />
-          </button>
+          <NotificacionesBell />
         </div>
       </div>
     </header>
