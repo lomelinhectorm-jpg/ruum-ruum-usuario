@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import type { EstatusViaje } from '@/lib/constants/estados'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -9,7 +8,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: { params: { eventsPerSecond: 10 } },
 })
 
-export type { EstatusViaje }
+export type EstatusViaje =
+  | 'Solicitud recibida' | 'Pendiente de asignación'
+  | 'Conductor asignado' | 'Conductor en camino' | 'Recolección en proceso'
+  | 'Evidencia inicial pendiente' | 'Traslado en curso' | 'Entrega en proceso'
+  | 'Evidencia final pendiente' | 'Finalizado' | 'Cancelado' | 'En revisión por incidencia'
 
 export interface Viaje {
   id: string; folio: string | null; usuario_id: string | null

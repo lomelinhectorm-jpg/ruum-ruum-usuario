@@ -38,23 +38,6 @@ function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
-function parsePerfil(raw: string | null) {
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as Partial<PerfilUsuario>
-  } catch {
-    return null
-  }
-}
-
-function authErrorMessage(message?: string) {
-  const normalized = message?.toLowerCase() ?? ''
-  if (normalized.includes('already') || normalized.includes('registered') || normalized.includes('exists')) {
-    return 'Este correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.'
-  }
-  return message ?? 'No se pudo crear el usuario de autenticación.'
-}
-
 // Sube un documento al bucket privado `documentos` bajo usuarios/{auth_id}/{nombre}.{ext}
 async function subirDocumento(
   admin: SupabaseClient,
@@ -97,7 +80,7 @@ export async function POST(request: Request) {
 
   const password = form.get('password') as string | null
   const perfilRaw = form.get('perfilUsuario') as string | null
-  const perfil = parsePerfil(perfilRaw)
+  const perfil = perfilRaw ? (JSON.parse(perfilRaw) as Partial<PerfilUsuario>) : null
 
   const ineTipo = (form.get('ineTipo') as string | null) || null
   const ineNumero = (form.get('ineNumero') as string | null) || null
@@ -153,7 +136,7 @@ export async function POST(request: Request) {
   })
 
   if (authError || !authData.user) {
-    return badRequest(authErrorMessage(authError?.message), 422)
+    return badRequest(authError?.message ?? 'No se pudo crear el usuario de autenticación.', 422)
   }
 
   // ── 2. Vincular el perfil de negocio en `usuarios` ──────────────────────────

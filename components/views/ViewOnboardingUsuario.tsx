@@ -9,9 +9,6 @@ type Step = 'welcome' | 'register' | 'login' | 'documents' | 'legal'
 type DocFile = { file: File; preview: string } | null
 
 const TIPOS_USUARIO = ['Personal','Empresarial','Agencia','Lote','Flotilla','Arrendadora','Taller','Aseguradora','Entrega al cliente']
-const MAX_DOC_FILE_BYTES = 3 * 1024 * 1024
-const DOC_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf'
-const DOC_ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const iCls = (err?: string) =>
@@ -77,7 +74,7 @@ function UploadBox({ label, value, onChange, error, accept = 'image/*,.pdf' }: {
         ) : (
           <>
             <span className="text-2xl mb-1">📎</span>
-            <p className="text-xs text-slate-500 text-center">Toca para subir<br /><span className="text-slate-400">JPG, PNG, WEBP o PDF</span></p>
+            <p className="text-xs text-slate-500 text-center">Toca para subir<br /><span className="text-slate-400">JPG, PNG o PDF</span></p>
           </>
         )}
         <input ref={ref} type="file" accept={accept} className="hidden"
@@ -440,22 +437,6 @@ function StepDocuments({ onBack, onNext }: { onBack: () => void; onNext: (data: 
   const [domicilio, setDomicilio] = useState<DocFile>(null)
   const [errors, setErrors] = useState<Record<string,string>>({})
 
-  const validateDoc = (doc: DocFile) => {
-    if (!doc) return ''
-    if (doc.file.size > MAX_DOC_FILE_BYTES) return 'Máximo 3 MB por archivo'
-    if (!DOC_ALLOWED_TYPES.has(doc.file.type)) return 'Solo JPG, PNG, WEBP o PDF'
-    return ''
-  }
-
-  const setDoc = (
-    key: 'ineFrente' | 'ineReverso' | 'domicilio',
-    setter: (doc: DocFile) => void,
-    doc: DocFile,
-  ) => {
-    setter(doc)
-    setErrors(er => ({ ...er, [key]: validateDoc(doc) }))
-  }
-
   const validate = () => {
     const e: Record<string,string> = {}
     if (!ineType)        e.ineType    = 'Selecciona el tipo'
@@ -464,12 +445,6 @@ function StepDocuments({ onBack, onNext }: { onBack: () => void; onNext: (data: 
     if (!ineFrente)      e.ineFrente  = 'Sube la imagen'
     if (!ineReverso)     e.ineReverso = 'Sube la imagen'
     if (!domicilio)      e.domicilio  = 'Sube el comprobante'
-    const ineFrenteError = validateDoc(ineFrente)
-    const ineReversoError = validateDoc(ineReverso)
-    const domicilioError = validateDoc(domicilio)
-    if (ineFrenteError) e.ineFrente = ineFrenteError
-    if (ineReversoError) e.ineReverso = ineReversoError
-    if (domicilioError) e.domicilio = domicilioError
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -519,11 +494,11 @@ function StepDocuments({ onBack, onNext }: { onBack: () => void; onNext: (data: 
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <UploadBox label="Frente" value={ineFrente}
-              onChange={v => setDoc('ineFrente', setIneFrente, v)}
-              error={errors.ineFrente} accept={DOC_ACCEPT} />
+              onChange={v => { setIneFrente(v); setErrors(er => ({ ...er, ineFrente: '' })) }}
+              error={errors.ineFrente} />
             <UploadBox label="Reverso" value={ineReverso}
-              onChange={v => setDoc('ineReverso', setIneReverso, v)}
-              error={errors.ineReverso} accept={DOC_ACCEPT} />
+              onChange={v => { setIneReverso(v); setErrors(er => ({ ...er, ineReverso: '' })) }}
+              error={errors.ineReverso} />
           </div>
         </div>
 
@@ -534,8 +509,8 @@ function StepDocuments({ onBack, onNext }: { onBack: () => void; onNext: (data: 
             <p className="text-sm font-bold text-slate-800">Comprobante de domicilio</p>
             <span className="text-xs text-slate-400">(máx. 3 meses)</span>
           </div>
-          <UploadBox label="Foto o PDF del comprobante" accept={DOC_ACCEPT} value={domicilio}
-            onChange={v => setDoc('domicilio', setDomicilio, v)}
+          <UploadBox label="Foto o PDF del comprobante" accept="image/*,.pdf" value={domicilio}
+            onChange={v => { setDomicilio(v); setErrors(er => ({ ...er, domicilio: '' })) }}
             error={errors.domicilio} />
         </div>
 
@@ -555,7 +530,7 @@ function StepDocuments({ onBack, onNext }: { onBack: () => void; onNext: (data: 
 }
 
 // ─── PANTALLA 4: TÉRMINOS LEGALES ─────────────────────────────────────────────
-function StepLegal({ onBack, onAccept, loading, error }: { onBack: () => void; onAccept: () => void; loading: boolean; error?: string }) {
+function StepLegal({ onBack, onAccept, loading }: { onBack: () => void; onAccept: () => void; loading: boolean }) {
   const [checks, setChecks] = useState({ terminos: false, privacidad: false, datos: false })
   const toggle = (k: keyof typeof checks) => setChecks(c => ({ ...c, [k]: !c[k] }))
   const allChecked = Object.values(checks).every(Boolean)
@@ -598,7 +573,6 @@ function StepLegal({ onBack, onAccept, loading, error }: { onBack: () => void; o
             </div>
           </button>
         ))}
-        {error && <p className="text-xs text-red-500 text-center font-semibold">{error}</p>}
         {!allChecked && <p className="text-xs text-slate-400 text-center">Acepta todos los documentos para activar tu cuenta</p>}
       </div>
 
@@ -698,12 +672,10 @@ export default function ViewOnboardingUsuario({ onAuth }: Props) {
   const [regData, setRegData] = useState<RegData | null>(null)
   const [docsData, setDocsData] = useState<DocsData | null>(null)
   const [legalLoading, setLegalLoading] = useState(false)
-  const [registroError, setRegistroError] = useState('')
 
   const handleAcceptLegal = async () => {
     if (!regData) return
     setLegalLoading(true)
-    setRegistroError('')
     try {
       const domicilioFiscal = regData.requiereFactura
         ? [regData.fiscalCalle, regData.fiscalNumero, regData.fiscalColonia, regData.fiscalMunicipio, regData.fiscalEstado, regData.fiscalCp]
@@ -763,8 +735,7 @@ export default function ViewOnboardingUsuario({ onAuth }: Props) {
       onAuth()
     } catch (e) {
       console.error('Error en registro:', e)
-      const message = e instanceof Error ? e.message : 'Ocurrió un error al crear tu cuenta. Intenta de nuevo.'
-      setRegistroError(message)
+      alert('Ocurrió un error al crear tu cuenta. Intenta de nuevo.')
     } finally {
       setLegalLoading(false)
     }
@@ -778,7 +749,7 @@ export default function ViewOnboardingUsuario({ onAuth }: Props) {
     case 'documents':
       return <StepDocuments onBack={() => setStep('register')} onNext={data => { setDocsData(data); setStep('legal') }} />
     case 'legal':
-      return <StepLegal onBack={() => setStep('documents')} onAccept={handleAcceptLegal} loading={legalLoading} error={registroError} />
+      return <StepLegal onBack={() => setStep('documents')} onAccept={handleAcceptLegal} loading={legalLoading} />
     case 'login':
       return <StepLogin onBack={() => setStep('welcome')} onAuth={onAuth} />
   }
