@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { TIPOS_INCIDENCIA } from '@/lib/constants/incidencias'
+import { TIPOS_INCIDENCIA, getConfigIncidencia } from '@/lib/constants/incidencias'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     return badRequest('Tipo de incidencia inválido.')
   }
   if (!descripcion || !descripcion.trim()) return badRequest('Falta describir la incidencia.')
+  const config = getConfigIncidencia(tipo)
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -77,13 +78,38 @@ export async function POST(request: Request) {
       tipo,
       descripcion: descripcion.trim(),
       estatus: 'Nueva',
-      prioridad: 'Media',
+      prioridad: config.prioridad,
+      bloquea_viaje: config.bloqueaViaje,
+      requiere_respuesta_operaciones: config.bloqueaViaje || ['Crítica'].includes(config.prioridad),
+      metadata: { requiere_fotos: config.requiereFotos, sla_horas: config.slaHoras, origen: 'usuario_app' },
       responsable_interno: '—',
     })
     .select('id')
     .single()
 
   if (insertError) return badRequest(`No se pudo registrar la incidencia: ${insertError.message}`, 500)
+
+  if (viaje_id && config.bloqueaViaje) {
+    await admin.from('viajes').update({ status: 'En revisión por incidencia' }).eq('id', viaje_id)
+    await admin.from('timeline_viaje').insert({
+      viaje_id,
+      evento: `Incidencia bloqueante: ${tipo}`,
+      actor: 'Sistema',
+      actor_tipo: 'sistema',
+    })
+  }
+
+  await admin.from('timeline_operativo').insert({
+    entidad_tipo: 'incidencia',
+    entidad_id: incidencia.id,
+    viaje_id,
+    conductor_id,
+    actor_id: usuarioRow.id,
+    actor_tipo: 'usuario',
+    evento: `Incidencia creada: ${tipo}`,
+    estado_nuevo: 'Nueva',
+    metadata: { prioridad: config.prioridad, bloquea_viaje: config.bloqueaViaje },
+  })
 
   return NextResponse.json({ ok: true, id: incidencia.id })
 }

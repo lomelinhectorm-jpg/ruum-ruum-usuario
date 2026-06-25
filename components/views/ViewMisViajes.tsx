@@ -2,22 +2,31 @@
 
 import { useState } from 'react'
 import { useApp } from '@/context/AppContext'
+import { esViajeActivo, normalizarEstatusViaje } from '@/lib/constants/estados'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronRight, faCheckCircle, faSpinner, faPlus } from '@fortawesome/free-solid-svg-icons'
 
 type Tab = 'Activos' | 'Programados' | 'Finalizados' | 'Cancelados'
 
-const ACTIVOS = ['Solicitud recibida','Pendiente de asignación','Conductor asignado','Conductor en camino','Recolección en proceso','Evidencia inicial pendiente','Traslado en curso','Entrega en proceso','Evidencia final pendiente','En revisión por incidencia']
-const PROGRAMADOS = ['Conductor asignado']
+const ACTIVOS = ['Solicitud recibida','Pendiente de asignación','Conductor asignado','Conductor en camino','Recolección en proceso','Evidencia inicial pendiente','Traslado en curso','Entrega en proceso','Evidencia final pendiente','En revisión por incidencia','Oferta enviada','Aceptado','En camino al origen','En origen','Inspeccion inicial','Listo para traslado','En destino','Inspeccion final','Entrega pendiente']
+const PROGRAMADOS = ['Conductor asignado', 'Oferta enviada', 'Aceptado']
 const FINALIZADOS = ['Finalizado']
 const CANCELADOS = ['Cancelado']
 
 const statusColor: Record<string, string> = {
   'Solicitud recibida':         'bg-slate-100 text-slate-600',
   'Pendiente de asignación':    'bg-amber-100 text-amber-700',
+  'Oferta enviada':             'bg-amber-100 text-amber-700',
+  'Aceptado':                   'bg-blue-100 text-blue-700',
   'Conductor asignado':         'bg-blue-100 text-blue-700',
   'Conductor en camino':        'bg-blue-100 text-blue-700',
+  'En camino al origen':        'bg-blue-100 text-blue-700',
+  'En origen':                  'bg-indigo-100 text-indigo-700',
+  'Inspeccion inicial':         'bg-indigo-100 text-indigo-700',
   'Traslado en curso':          'bg-purple-100 text-purple-700',
+  'En destino':                 'bg-purple-100 text-purple-700',
+  'Inspeccion final':           'bg-purple-100 text-purple-700',
+  'Entrega pendiente':          'bg-purple-100 text-purple-700',
   'Finalizado':                 'bg-green-100 text-green-700',
   'Cancelado':                  'bg-red-100 text-red-600',
   'En revisión por incidencia': 'bg-rose-100 text-rose-700',
@@ -34,7 +43,14 @@ export default function ViewMisViajes() {
     tab === 'Finalizados' ? FINALIZADOS :
     CANCELADOS
 
-  const filtrados = misViajes.filter(v => statusesDeTab(activeTab).includes(v.status))
+  const perteneceATab = (status: string, tab: Tab) => {
+    const normalizado = normalizarEstatusViaje(status)
+    if (tab === 'Activos') return esViajeActivo({ status }) || ACTIVOS.includes(status)
+    const permitidos = statusesDeTab(tab)
+    return permitidos.includes(status) || Boolean(normalizado && permitidos.includes(normalizado))
+  }
+
+  const filtrados = misViajes.filter(v => perteneceATab(v.status, activeTab))
 
   return (
     <div className="fade-in p-5 pb-24">
@@ -53,9 +69,9 @@ export default function ViewMisViajes() {
             }`}
           >
             {tab}
-            {misViajes.filter(v => statusesDeTab(tab).includes(v.status)).length > 0 && (
+            {misViajes.filter(v => perteneceATab(v.status, tab)).length > 0 && (
               <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-white/20' : 'bg-slate-100'}`}>
-                {misViajes.filter(v => statusesDeTab(tab).includes(v.status)).length}
+                {misViajes.filter(v => perteneceATab(v.status, tab)).length}
               </span>
             )}
           </button>
